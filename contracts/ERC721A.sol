@@ -73,7 +73,7 @@ contract ERC721A is IERC721A {
     uint256 private constant MAX_MINT_ERC2309_QUANTITY_LIMIT = 5000;
 
     // The tokenId of the next token to be minted.
-    uint256 private _currentIndex;
+    uint256 internal _currentIndex;
 
     // The number of tokens burned.
     uint256 private _burnCounter;
