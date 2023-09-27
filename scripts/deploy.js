@@ -12,7 +12,7 @@ async function main() {
     console.log("Account balance:", (await deployer.getBalance()).toString());
 
     const Contract = await hre.ethers.getContractFactory("TAPS");
-    const contract = await Contract.deploy("TAPS", "TAPS", "", "");
+    const contract = await Contract.deploy();
 
     await contract.deployed();
 
