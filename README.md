@@ -2,7 +2,7 @@
 
 ## Overview
 
-The TAPS contract is a multi-wallet management system designed to provide varying levels of security based on the type of wallet and the operations performed. It allows users to vault and unvault assets, both in the form of tokens (ERC20, ERC721, and ERC1155) and Ether, between different wallet types. The primary goal of TAPS is to enhance asset security by leveraging the strengths of different wallet types and their associated risk profiles.
+The TAPS contract is a multi-wallet management system designed to provide varying levels of security based on the type of wallet and the operations performed. It allows users to vault and unvault assets, both in the form of tokens (ERC20, ERC721, and ERC1155) and Ether, between different wallet types. Vaulting refers to the process of going from a less secure state to a more secure state. Unvaulting refers to the process of going from a more secure state to a less secure state. The primary goal of TAPS is to enhance asset security by leveraging the strengths of different wallet types and their associated risk profiles.
 
 ## Wallet and Vault Types
 
