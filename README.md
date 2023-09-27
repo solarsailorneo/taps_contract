@@ -112,3 +112,10 @@ Ensure you have the necessary dependencies installed and the local environment s
 ## Conclusion
 
 The TAPS contract offers a comprehensive solution to asset management, balancing the need for security with the convenience of flexible operations. By categorizing wallets into different types, allowing for secure transitions, and eliminating common user errors, TAPS stands out as a robust tool for both novice and experienced users in the blockchain space. Whether you're looking for maximum security or operational flexibility, TAPS has got you covered.
+
+## Run Contract Locally
+
+npx hardhat node
+
+
+npx hardhat run --network localhost scripts/deploy.js
