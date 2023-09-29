@@ -29,16 +29,10 @@ contract TAPS {
     }
 
     mapping(address => UserWallets) public userWalletConfigs;
-    mapping(address => address) public mintToColdMapping;
-    mapping(address => address) public transactionToColdMapping;
-    mapping(address => address) public socialToColdMapping;
-
+    mapping(address => address) public walletToColdMapping;
 
     enum CommitmentMode { NotSet, SigningCold, NonSigningCold }
     mapping(address => CommitmentMode) public commitmentModes;
-
-
-    uint256 public cooldownPeriod = 1 days;
 
     // Events
     event WalletConfigSet(address indexed user);
@@ -73,42 +67,17 @@ contract TAPS {
         bytes memory socialVaultSignature,
         bytes memory coldVaultSignature
     ) external {
-        require(commitmentModes[_coldVault] == CommitmentMode.NotSet, "Commitment mode already set");
-        require(msg.sender == _coldVault, "Transaction must be initiated by the cold vault");
-        require(
-            _mintingWallet != _transactionWallet && 
-            _mintingWallet != _socialVault && 
-            _mintingWallet != _coldVault &&
-            _transactionWallet != _socialVault &&
-            _transactionWallet != _coldVault &&
-            _socialVault != _coldVault,
-            "Wallet and vault addresses must be unique"
+        _setAllWalletAndVaultConfigs(
+            _mintingWallet,
+            _transactionWallet,
+            _socialVault,
+            _coldVault,
+            mintingWalletSignature,
+            transactionWalletSignature,
+            socialVaultSignature,
+            coldVaultSignature,
+            CommitmentMode.SigningCold
         );
-
-        // Construct the message that wallets/vaults should have signed
-        bytes32 message = keccak256(abi.encodePacked("Approve setup for TAPS Contract at ", address(this)));
-        bytes32 ethSignedMessage = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", message));
-
-        // Ensure the recovered addresses match the provided addresses using the verifySignature function
-        require(verifySignature(ethSignedMessage, mintingWalletSignature, _mintingWallet), "Minting wallet signature mismatch");
-        require(verifySignature(ethSignedMessage, transactionWalletSignature, _transactionWallet), "Transaction wallet signature mismatch");
-        require(verifySignature(ethSignedMessage, socialVaultSignature, _socialVault), "Social vault signature mismatch");
-        require(verifySignature(ethSignedMessage, coldVaultSignature, _coldVault), "Cold vault signature mismatch");
-
-        UserWallets storage config = userWalletConfigs[_coldVault];
-        config.mintingWallet = _mintingWallet;
-        config.transactionWallet = _transactionWallet;
-        config.socialVault = _socialVault;
-        config.coldVault = _coldVault;
-
-        // Update reverse mappings
-        mintToColdMapping[_mintingWallet] = _coldVault;
-        transactionToColdMapping[_transactionWallet] = _coldVault;
-        socialToColdMapping[_socialVault] = _coldVault;
-
-        commitmentModes[_coldVault] = CommitmentMode.SigningCold;
-
-        emit WalletConfigSet(_coldVault);
     }
 
     function setAllWalletAndVaultConfigsNonSigningCold(
@@ -120,8 +89,31 @@ contract TAPS {
         bytes memory transactionWalletSignature,
         bytes memory socialVaultSignature
     ) external {
+        _setAllWalletAndVaultConfigs(
+            _mintingWallet,
+            _transactionWallet,
+            _socialVault,
+            _coldVault,
+            mintingWalletSignature,
+            transactionWalletSignature,
+            socialVaultSignature,
+            "",
+            CommitmentMode.NonSigningCold
+        );
+    }
+
+    function _setAllWalletAndVaultConfigs(
+        address _mintingWallet, 
+        address _transactionWallet, 
+        address _socialVault, 
+        address _coldVault, 
+        bytes memory mintingWalletSignature,
+        bytes memory transactionWalletSignature,
+        bytes memory socialVaultSignature,
+        bytes memory coldVaultSignature,
+        CommitmentMode mode
+    ) private {
         require(commitmentModes[_coldVault] == CommitmentMode.NotSet, "Commitment mode already set");
-        require(msg.sender == _socialVault, "Transaction must be initiated by the social vault");
         require(
             _mintingWallet != _transactionWallet && 
             _mintingWallet != _socialVault && 
@@ -140,6 +132,12 @@ contract TAPS {
         require(verifySignature(ethSignedMessage, mintingWalletSignature, _mintingWallet), "Minting wallet signature mismatch");
         require(verifySignature(ethSignedMessage, transactionWalletSignature, _transactionWallet), "Transaction wallet signature mismatch");
         require(verifySignature(ethSignedMessage, socialVaultSignature, _socialVault), "Social vault signature mismatch");
+        if (mode == CommitmentMode.SigningCold) {
+            require(msg.sender == _coldVault, "Transaction must be initiated by the cold vault");
+            require(verifySignature(ethSignedMessage, coldVaultSignature, _coldVault), "Cold vault signature mismatch");
+        } else {
+            require(msg.sender == _socialVault, "Transaction must be initiated by the social vault");
+        }
 
         UserWallets storage config = userWalletConfigs[_coldVault];
         config.mintingWallet = _mintingWallet;
@@ -148,103 +146,57 @@ contract TAPS {
         config.coldVault = _coldVault;
 
         // Update reverse mappings
-        mintToColdMapping[_mintingWallet] = _coldVault;
-        transactionToColdMapping[_transactionWallet] = _coldVault;
-        socialToColdMapping[_socialVault] = _coldVault;
+        walletToColdMapping[_mintingWallet] = _coldVault;
+        walletToColdMapping[_transactionWallet] = _coldVault;
+        walletToColdMapping[_socialVault] = _coldVault;
 
-        commitmentModes[_coldVault] = CommitmentMode.NonSigningCold;
+        commitmentModes[_coldVault] = mode;
 
         emit WalletConfigSet(_coldVault);
     }
 
     function swapMintingWallet(address _newMintingWallet, bytes memory newMintingWalletSignature) external {
-        require(_newMintingWallet != address(0), "Invalid minting wallet address");
-
-        // Construct the message that the new minting wallet should have signed
-        bytes32 message = keccak256(abi.encodePacked("Approve minting wallet swap for TAPS Contract at ", address(this)));
-        bytes32 ethSignedMessage = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", message));
-
-        // Ensure the recovered address from the signature matches the new minting wallet address
-        require(verifySignature(ethSignedMessage, newMintingWalletSignature, _newMintingWallet), "New minting wallet signature mismatch");
-
-        address _coldVault = getColdWalletForSender(msg.sender);
-        UserWallets storage config = userWalletConfigs[_coldVault];
-
-        if (commitmentModes[_coldVault] == CommitmentMode.SigningCold) {
-            require(msg.sender == _coldVault, "Only the cold vault can perform this operation in SigningCold mode");
-        } else if (commitmentModes[_coldVault] == CommitmentMode.NonSigningCold) {
-            require(msg.sender == config.socialVault, "Only the social vault can perform this operation in NonSigningCold mode");
-        } else {
-            revert("Invalid mode or sender");
-        }
-
-        require(config.mintingWallet != address(0), "Minting wallet not set yet");
-        require(_newMintingWallet != config.transactionWallet && _newMintingWallet != config.socialVault && _newMintingWallet != config.coldVault, "Address already in use");
-
-        config.mintingWallet = _newMintingWallet;
+        _swapWallet(_newMintingWallet, newMintingWalletSignature, WalletType.Mint);
     }
 
     function swapTransactionWallet(address _newTransactionWallet, bytes memory newTransactionWalletSignature) external {
-        require(_newTransactionWallet != address(0), "Invalid transaction wallet address");
-
-        // Construct the message that the new transaction wallet should have signed
-        bytes32 message = keccak256(abi.encodePacked("Approve transaction wallet swap for TAPS Contract at ", address(this)));
-        bytes32 ethSignedMessage = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", message));
-
-        // Ensure the recovered address from the signature matches the new transaction wallet address
-        require(verifySignature(ethSignedMessage, newTransactionWalletSignature, _newTransactionWallet), "New transaction wallet signature mismatch");
-
-        address _coldVault = getColdWalletForSender(msg.sender);
-        UserWallets storage config = userWalletConfigs[_coldVault];
-
-        if (commitmentModes[_coldVault] == CommitmentMode.SigningCold) {
-            require(msg.sender == _coldVault, "Only the cold vault can perform this operation in SigningCold mode");
-        } else if (commitmentModes[_coldVault] == CommitmentMode.NonSigningCold) {
-            require(msg.sender == config.socialVault, "Only the social vault can perform this operation in NonSigningCold mode");
-        } else {
-            revert("Invalid mode or sender");
-        }
-
-        require(config.transactionWallet != address(0), "Transaction wallet not set yet");
-        require(_newTransactionWallet != config.mintingWallet && _newTransactionWallet != config.socialVault && _newTransactionWallet != config.coldVault, "Address already in use");
-
-        config.transactionWallet = _newTransactionWallet;
+        _swapWallet(_newTransactionWallet, newTransactionWalletSignature, WalletType.Transaction);
     }
 
     function swapSocialVault(address _newSocialVault, bytes memory newSocialVaultSignature) external {
-        require(_newSocialVault != address(0), "Invalid social vault address");
+        _swapWallet(_newSocialVault, newSocialVaultSignature, WalletType.Social);
+    }
 
-        // Construct the message that the new social vault should have signed
-        bytes32 message = keccak256(abi.encodePacked("Approve social vault swap for TAPS Contract at ", address(this)));
+    function _swapWallet(address _newWallet, bytes memory newWalletSignature, WalletType walletType) private {
+        require(_newWallet != address(0), "Invalid wallet address");
+
+        bytes32 message = keccak256(abi.encodePacked("Approve wallet swap for TAPS Contract at ", address(this)));
         bytes32 ethSignedMessage = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", message));
 
-        // Ensure the recovered address from the signature matches the new social vault address
-        require(verifySignature(ethSignedMessage, newSocialVaultSignature, _newSocialVault), "New social vault signature mismatch");
+        require(verifySignature(ethSignedMessage, newWalletSignature, _newWallet), "Wallet signature mismatch");
 
         address _coldVault = getColdWalletForSender(msg.sender);
         UserWallets storage config = userWalletConfigs[_coldVault];
 
-        if (commitmentModes[_coldVault] == CommitmentMode.SigningCold) {
-            require(msg.sender == _coldVault, "Only the cold vault can perform this operation in SigningCold mode");
-        } else if (commitmentModes[_coldVault] == CommitmentMode.NonSigningCold) {
-            require(msg.sender == config.socialVault, "Only the social vault can perform this operation in NonSigningCold mode");
-        } else {
-            revert("Invalid mode or sender");
+        CommitmentMode mode = commitmentModes[_coldVault];
+        require(
+            (mode == CommitmentMode.SigningCold && msg.sender == _coldVault) ||
+            (mode == CommitmentMode.NonSigningCold && msg.sender == config.socialVault),
+            "Invalid sender for the current mode"
+        );
+
+        if (walletType == WalletType.Mint) {
+            require(config.mintingWallet != address(0), "Minting wallet not set yet");
+            config.mintingWallet = _newWallet;
+        } else if (walletType == WalletType.Transaction) {
+            require(config.transactionWallet != address(0), "Transaction wallet not set yet");
+            config.transactionWallet = _newWallet;
+        } else if (walletType == WalletType.Social) {
+            require(config.socialVault != address(0), "Social vault not set yet");
+            config.socialVault = _newWallet;
         }
 
-        require(config.socialVault != address(0), "Social vault not set yet");
-        require(_newSocialVault != config.mintingWallet && _newSocialVault != config.transactionWallet && _newSocialVault != config.coldVault, "Address already in use");
-
-        config.socialVault = _newSocialVault;
-    }
-
-    function _isValidWallet(address _wallet) internal view returns (bool) {
-        // Ensure it's an EOA (no associated bytecode)
-        uint256 size;
-        assembly { size := extcodesize(_wallet) }
-        if (size > 0) return false;
-
-        return true;
+        walletToColdMapping[_newWallet] = _coldVault;
     }
 
     function vaultETH(WalletType _toType) external payable {
@@ -392,20 +344,11 @@ contract TAPS {
     }
 
     function getColdWalletForSender(address sender) public view returns (address) {
-        // If the sender is a cold vault, return its own address
-        if (sender != address(0) && (mintToColdMapping[sender] == address(0) && transactionToColdMapping[sender] == address(0) && socialToColdMapping[sender] == address(0))) {
-            return sender;
+        address coldWallet = walletToColdMapping[sender];
+        if (coldWallet != address(0)) {
+            return coldWallet;
         }
-
-        if (mintToColdMapping[sender] != address(0)) {
-            return mintToColdMapping[sender];
-        } else if (transactionToColdMapping[sender] != address(0)) {
-            return transactionToColdMapping[sender];
-        } else if (socialToColdMapping[sender] != address(0)) {
-            return socialToColdMapping[sender];
-        } else {
-            revert("Sender not associated with any cold wallet");
-        }
+        return sender;
     }
 
     // Define structs for each token type
@@ -483,26 +426,25 @@ contract TAPS {
         // Transfer ETH
         if (ethAmount > 0) {
             payable(msg.sender).transfer(ethAmount);
-            emit Unvaulted(destination, msg.sender, ethAmount, address(0), 0);
+            emit Unvaulted(msg.sender, destination, ethAmount, address(0), 0);
         }
 
         // Transfer ERC20 tokens
         for (uint256 i = 0; i < erc20Tokens.length; i++) {
-            _transferToken(destination, msg.sender, erc20Tokens[i].tokenAddress, erc20Tokens[i].amount);
-            emit Unvaulted(destination, msg.sender, erc20Tokens[i].amount, erc20Tokens[i].tokenAddress, erc20Tokens[i].amount);
+            _transferToken(msg.sender, destination, erc20Tokens[i].tokenAddress, erc20Tokens[i].amount);
+            emit Unvaulted(msg.sender, destination, erc20Tokens[i].amount, erc20Tokens[i].tokenAddress, erc20Tokens[i].amount);
         }
 
         // Transfer ERC721 tokens
         for (uint256 i = 0; i < erc721Tokens.length; i++) {
-            _transferToken(destination, msg.sender, erc721Tokens[i].tokenAddress, erc721Tokens[i].tokenId);
-            emit Unvaulted(destination, msg.sender, erc721Tokens[i].tokenId, erc721Tokens[i].tokenAddress, 1);
+            _transferToken(msg.sender, destination, erc721Tokens[i].tokenAddress, erc721Tokens[i].tokenId);
+            emit Unvaulted(msg.sender, destination, erc721Tokens[i].tokenId, erc721Tokens[i].tokenAddress, 1);
         }
 
         // Transfer ERC1155 tokens
         for (uint256 i = 0; i < erc1155Tokens.length; i++) {
             IERC1155(erc1155Tokens[i].tokenAddress).safeTransferFrom(destination, msg.sender, erc1155Tokens[i].tokenId, erc1155Tokens[i].amount, erc1155Tokens[i].data);
-            emit Unvaulted(destination, msg.sender, erc1155Tokens[i].tokenId, erc1155Tokens[i].tokenAddress, erc1155Tokens[i].amount);
+            emit Unvaulted(msg.sender, destination, erc1155Tokens[i].tokenId, erc1155Tokens[i].tokenAddress, erc1155Tokens[i].amount);
         }
     }
-
 }
