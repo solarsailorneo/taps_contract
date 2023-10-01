@@ -284,14 +284,12 @@ describe("TAPS", function () {
             expect(userWallets.transactionWallet).to.equal(transactionWallet2.address);
         });
     
-        it("Allows the social vault to swap the social vault", async function() {
+        it("Rejects attempts by the social vault to swap the social vault", async function() {
             const swapMessage = ethers.utils.solidityKeccak256(["string", "address"], ["Approve wallet swap for TAPS Contract at ", taps.address]);
             const swapMessageHashBytes = ethers.utils.arrayify(swapMessage);
             const socialVault2Signature = await socialVault2.signMessage(swapMessageHashBytes);
         
-            await taps.connect(socialVault).swapSocialVault(socialVault2.address, socialVault2Signature);
-            const userWallets = await taps.userWalletConfigs(coldVault.address);
-            expect(userWallets.socialVault).to.equal(socialVault2.address);
+            await expect(taps.connect(socialVault).swapSocialVault(socialVault2.address, socialVault2Signature)).to.be.revertedWith("Social vault cannot change itself in NonSigningCold mode");
         });        
     
         it("Rejects attempts by non-social vaults to swap the transaction wallet", async function() {

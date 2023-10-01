@@ -185,17 +185,35 @@ contract TAPS {
             "Invalid sender for the current mode"
         );
 
+        address oldWallet;
         if (walletType == WalletType.Mint) {
             require(config.mintingWallet != address(0), "Minting wallet not set yet");
+            oldWallet = config.mintingWallet;
             config.mintingWallet = _newWallet;
         } else if (walletType == WalletType.Transaction) {
             require(config.transactionWallet != address(0), "Transaction wallet not set yet");
+            oldWallet = config.transactionWallet;
             config.transactionWallet = _newWallet;
         } else if (walletType == WalletType.Social) {
             require(config.socialVault != address(0), "Social vault not set yet");
+            oldWallet = config.socialVault;
+
+            // Ensure that the socialVault under NonSigningCold mode cannot change itself
+            if (mode == CommitmentMode.NonSigningCold) {
+                require(msg.sender != oldWallet, "Social vault cannot change itself in NonSigningCold mode");
+            }
+
             config.socialVault = _newWallet;
+        } else {
+            revert("Invalid wallet type");
         }
 
+        // Delete the old mapping
+        if (oldWallet != address(0)) {
+            delete walletToColdMapping[oldWallet];
+        }
+
+        // Add the new mapping
         walletToColdMapping[_newWallet] = _coldVault;
     }
 
